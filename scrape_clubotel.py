@@ -18,8 +18,8 @@ PARAMS = {
 # Generate all Sun-Thu and Thu-Sun date ranges in July-August 2025
 def generate_date_ranges():
     date_ranges = []
-    start = datetime(2025, 7, 1)
-    end = datetime(2025, 8, 31)
+    start = datetime.now()
+    end = datetime(2025, 10, 31)
     curr = start
     while curr <= end:
         if curr.weekday() == 6:  # Sunday
