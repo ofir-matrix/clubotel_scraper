@@ -7,6 +7,8 @@ name = "pypi"
 pandas = "*"
 playwright = "*"
 beautifulsoup4 = "*"
+fastapi = "*"
+uvicorn = "*"
 
 [dev-packages]
 black = "*"

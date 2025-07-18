@@ -18,7 +18,7 @@ PARAMS = {
 # Generate all Sun-Thu and Thu-Sun date ranges in July-August 2025
 def generate_date_ranges():
     date_ranges = []
-    start = datetime(2025, 7, 1)
+    start = datetime.now()
     end = datetime(2025, 8, 31)
     curr = start
     while curr <= end:
@@ -78,7 +78,7 @@ async def scrape_parallel():
     date_ranges = generate_date_ranges()  # All date ranges
     results = []
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)  # Headful mode
+        browser = await p.chromium.launch(headless=False)  # Headed mode for Docker with Xvfb
         # Use concurrency equal to the number of URLs
         concurrency = len(date_ranges)
         pages = [await browser.new_page() for _ in range(concurrency)]
