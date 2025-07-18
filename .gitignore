@@ -1,2 +1,10 @@
 *.csv 
 _pycache_/
+
+# Ignore Android app build/intermediate files
+ClubotelAndroidApp/app/build/
+!ClubotelAndroidApp/app/build/outputs/apk/debug/app-debug.apk
+ClubotelAndroidApp/app/.cxx/
+ClubotelAndroidApp/app/.gradle/
+ClubotelAndroidApp/app/.idea/
+ClubotelAndroidApp/app/local.properties
