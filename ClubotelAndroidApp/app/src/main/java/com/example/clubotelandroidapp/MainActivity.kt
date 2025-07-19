@@ -13,6 +13,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.clubotelandroidapp.ui.theme.ClubotelAndroidAppTheme
+import androidx.compose.ui.graphics.Color
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +43,8 @@ fun PriceTableScreen(viewModel: PriceTableViewModel = viewModel()) {
                 .fillMaxWidth()
                 .padding(vertical = 8.dp)
                 .border(1.dp, MaterialTheme.colors.primary)
-                .padding(8.dp)
+                .padding(8.dp),
+            textStyle = LocalTextStyle.current.copy(color = Color.White)
         )
         Button(onClick = {
             isLoading = true
