@@ -1,5 +1,6 @@
 import pandas as pd
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 import asyncio
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
@@ -19,7 +20,8 @@ PARAMS = {
 def generate_date_ranges():
     date_ranges = []
     start = datetime.now()
-    end = datetime(2025, 8, 31)
+    # Set date range for scraping (2 months from now)
+    end = datetime.now() + relativedelta(months=3)
     curr = start
     while curr <= end:
         if curr.weekday() == 6:  # Sunday
