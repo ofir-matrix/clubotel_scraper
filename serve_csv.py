@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Response
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi import Query
 import os
 import subprocess
 import pandas as pd
 import shutil
+import math
 
 app = FastAPI()
 
@@ -18,6 +20,15 @@ PROGRESS_FILE = os.path.join(BASE_DIR, 'progress.json')
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, 'assets')), name="assets")
 
+def json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [json_safe(v) for v in obj]
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    return obj
+
 @app.get("/progress")
 def get_progress():
     if os.path.exists(PROGRESS_FILE):
@@ -30,9 +41,18 @@ def get_progress():
     return JSONResponse({"status": "idle"})
 
 @app.get("/lowest_two_prices")
-def get_lowest_two_prices():
+def get_lowest_two_prices(
+    fast: bool = Query(default=True),
+    start: str | None = Query(default=None, description="YYYY-MM-DD"),
+    end: str | None = Query(default=None, description="YYYY-MM-DD"),
+):
     env = os.environ.copy()
     env['PROGRESS_FILE'] = PROGRESS_FILE
+    env['FAST_MODE'] = '1' if fast else '0'
+    if start:
+        env['START_DATE'] = start
+    if end:
+        env['END_DATE'] = end
     subprocess.run(["python", SCRIPT_PATH], check=True, env=env)
     def file_iterator():
         with open(CSV_PATH, "rb") as f:
@@ -43,12 +63,23 @@ def get_lowest_two_prices():
     return StreamingResponse(file_iterator(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=lowest_two_prices_per_file.csv"})
 
 @app.get("/lowest_two_prices_json")
-def get_lowest_two_prices_json():
+def get_lowest_two_prices_json(
+    fast: bool = Query(default=True),
+    start: str | None = Query(default=None, description="YYYY-MM-DD"),
+    end: str | None = Query(default=None, description="YYYY-MM-DD"),
+):
     env = os.environ.copy()
     env['PROGRESS_FILE'] = PROGRESS_FILE
+    env['FAST_MODE'] = '1' if fast else '0'
+    if start:
+        env['START_DATE'] = start
+    if end:
+        env['END_DATE'] = end
     subprocess.run(["python", SCRIPT_PATH], check=True, env=env)
     df = pd.read_csv(CSV_PATH)
-    response = JSONResponse(content=df.to_dict(orient="records"))
+    records = df.to_dict(orient="records")
+    records = json_safe(records)
+    response = JSONResponse(content=records)
     # Rename after sending (may happen before client is done, but is usually fine)
     if os.path.exists(CSV_PATH):
         shutil.move(CSV_PATH, CSV_OLD_PATH)

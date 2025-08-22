@@ -26,11 +26,25 @@ function diffNights(inDate: string, outDate: string) {
   return Math.max(1, nights)
 }
 
+function fmtDateInput(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export const App: React.FC = () => {
+  const today = new Date()
+  const threeMonths = new Date(today)
+  threeMonths.setMonth(threeMonths.getMonth() + 3)
+
   const [data, setData] = useState<SummaryRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({ status: 'idle' })
+  const [fast, setFast] = useState(true)
+  const [start, setStart] = useState(fmtDateInput(today))
+  const [end, setEnd] = useState(fmtDateInput(threeMonths))
 
   const pollProgress = () => {
     const timer = setInterval(async () => {
@@ -51,7 +65,8 @@ export const App: React.FC = () => {
     setError(null)
     const stop = pollProgress()
     try {
-      const res = await fetch('/lowest_two_prices_json', { cache: 'no-store' })
+      const params = new URLSearchParams({ fast: fast ? '1' : '0', start, end })
+      const res = await fetch(`/lowest_two_prices_json?${params.toString()}`, { cache: 'no-store' })
       if (!res.ok) throw new Error('Failed to fetch')
       const json = (await res.json()) as unknown
       if (!Array.isArray(json)) throw new Error('Unexpected response')
@@ -92,9 +107,18 @@ export const App: React.FC = () => {
     <div className="page">
       <header className="header">
         <h1>Clubotel Prices</h1>
-        <button className="btn" onClick={fetchData} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--muted)' }}>
+            <input type="checkbox" checked={fast} onChange={e => setFast(e.target.checked)} />
+            Fast mode
+          </label>
+          <input type="date" value={start} onChange={e => setStart(e.target.value)} />
+          <span style={{ color: 'var(--muted)' }}>→</span>
+          <input type="date" value={end} onChange={e => setEnd(e.target.value)} />
+          <button className="btn" onClick={fetchData} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </header>
 
       {error && <div className="alert">{error}</div>}
