@@ -4,11 +4,13 @@ FROM python:3.11-slim-bullseye
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies including Xvfb for headed browser
+# Install system dependencies including Xvfb and Node.js (via apt)
 RUN apt-get update \
     && apt-get install -y \
         wget \
         gnupg \
+        curl \
+        ca-certificates \
         xvfb \
         fonts-liberation \
         libasound2 \
@@ -36,6 +38,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install Playwright browsers
 RUN pip install playwright \
     && playwright install --with-deps
+
+# Install Node.js (LTS) via NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update \
+    && apt-get install -y nodejs \
+    && npm -v \
+    && node -v \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build frontend
+COPY frontend ./frontend
+RUN cd frontend \
+    && npm ci || npm install \
+    && npm run build
 
 # Copy the rest of the code
 COPY scrape_clubotel.py ./

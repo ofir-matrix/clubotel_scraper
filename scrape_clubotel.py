@@ -4,6 +4,8 @@ from dateutil.relativedelta import relativedelta
 import asyncio
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
+import os
+import json
 
 BASE_URL = "https://www.clubhotels.co.il/BE_Results.aspx"
 PARAMS = {
@@ -42,7 +44,44 @@ def build_url(in_date, out_date):
     param_str = '&'.join(f"{k}={v}" for k, v in params.items())
     return f"{BASE_URL}?{param_str}"
 
-async def fetch_and_parse(page, in_date, out_date, results):
+class ProgressWriter:
+    def __init__(self, path: str | None, total: int):
+        self.path = path
+        self.total = total
+        self.done = 0
+        self._lock = asyncio.Lock()
+    async def init(self):
+        if not self.path:
+            return
+        data = {"status": "running", "total": self.total, "done": 0}
+        try:
+            with open(self.path, 'w', encoding='utf-8') as f:
+                json.dump(data, f)
+        except Exception:
+            pass
+    async def increment(self):
+        if not self.path:
+            return
+        async with self._lock:
+            self.done += 1
+            data = {"status": "running", "total": self.total, "done": self.done}
+            try:
+                with open(self.path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
+    async def complete(self):
+        if not self.path:
+            return
+        async with self._lock:
+            data = {"status": "done", "total": self.total, "done": self.total}
+            try:
+                with open(self.path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
+
+async def fetch_and_parse(page, in_date, out_date, results, progress: ProgressWriter):
     url = build_url(in_date, out_date)
     print(f"Fetching: {url}")
     await page.goto(url)
@@ -75,19 +114,22 @@ async def fetch_and_parse(page, in_date, out_date, results):
             found = True
     if not found:
         print(f"WARNING: No prices found for {in_date.strftime('%Y-%m-%d')} - {out_date.strftime('%Y-%m-%d')}")
+    await progress.increment()
 
 async def scrape_parallel():
     date_ranges = generate_date_ranges()  # All date ranges
     results = []
+    progress_file = os.environ.get('PROGRESS_FILE')
+    progress = ProgressWriter(progress_file, total=len(date_ranges))
+    await progress.init()
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)  # Headed mode for Docker with Xvfb
-        # Use concurrency equal to the number of URLs
         concurrency = len(date_ranges)
         pages = [await browser.new_page() for _ in range(concurrency)]
         tasks = []
         for i, (in_date, out_date) in enumerate(date_ranges):
             page = pages[i]
-            tasks.append(fetch_and_parse(page, in_date, out_date, results))
+            tasks.append(fetch_and_parse(page, in_date, out_date, results, progress))
         # Run all tasks in parallel
         await asyncio.gather(*tasks)
         await browser.close()
@@ -106,6 +148,7 @@ async def scrape_parallel():
     df_summary = pd.DataFrame(summary)
     df_summary.to_csv('lowest_two_prices_per_file.csv', index=False)
     print('Saved lowest prices to lowest_two_prices_per_file.csv')
+    await progress.complete()
 
 if __name__ == '__main__':
     asyncio.run(scrape_parallel()) 
