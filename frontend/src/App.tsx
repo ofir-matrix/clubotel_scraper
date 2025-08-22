@@ -33,18 +33,24 @@ function fmtDateInput(d: Date) {
   return `${y}-${m}-${day}`
 }
 
+function addMonths(date: Date, months: number) {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() + months)
+  return d
+}
+
 export const App: React.FC = () => {
   const today = new Date()
-  const threeMonths = new Date(today)
-  threeMonths.setMonth(threeMonths.getMonth() + 3)
+  const twoWeeks = new Date(today)
+  twoWeeks.setDate(twoWeeks.getDate() + 14)
 
   const [data, setData] = useState<SummaryRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({ status: 'idle' })
-  const [fast, setFast] = useState(true)
+  const [fast, setFast] = useState(false)
   const [start, setStart] = useState(fmtDateInput(today))
-  const [end, setEnd] = useState(fmtDateInput(threeMonths))
+  const [end, setEnd] = useState(fmtDateInput(twoWeeks))
 
   const pollProgress = () => {
     const timer = setInterval(async () => {
@@ -87,7 +93,7 @@ export const App: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchData()
+    // No auto refresh on mount
   }, [])
 
   const rows = useMemo(() => {
@@ -115,6 +121,11 @@ export const App: React.FC = () => {
           <input type="date" value={start} onChange={e => setStart(e.target.value)} />
           <span style={{ color: 'var(--muted)' }}>→</span>
           <input type="date" value={end} onChange={e => setEnd(e.target.value)} />
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <button className="btn" onClick={() => setEnd(fmtDateInput(addMonths(new Date(start), 1)))}>+1 mo</button>
+            <button className="btn" onClick={() => setEnd(fmtDateInput(addMonths(new Date(start), 2)))}>+2 mo</button>
+            <button className="btn" onClick={() => setEnd(fmtDateInput(addMonths(new Date(start), 3)))}>+3 mo</button>
+          </div>
           <button className="btn" onClick={fetchData} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
@@ -139,7 +150,7 @@ export const App: React.FC = () => {
           <tbody>
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>No data yet. Click Refresh.</td>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>Pick dates and click Refresh.</td>
               </tr>
             )}
             {rows.map((r, i) => (
