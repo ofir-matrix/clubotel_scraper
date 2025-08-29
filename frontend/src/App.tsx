@@ -7,6 +7,8 @@ interface SummaryRow {
   breakfast: number | null
 }
 
+type SummaryRowWithFlags = SummaryRow & { prefetched?: boolean }
+
 interface Progress {
   status: 'idle' | 'running' | 'done' | 'unknown'
   total?: number
@@ -235,7 +237,7 @@ export const App: React.FC = () => {
   const twoWeeks = new Date(today)
   twoWeeks.setDate(twoWeeks.getDate() + 14)
 
-  const [data, setData] = useState<SummaryRow[]>([])
+  const [data, setData] = useState<SummaryRowWithFlags[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({ status: 'idle' })
@@ -243,6 +245,97 @@ export const App: React.FC = () => {
   const [clientSide, setClientSide] = useState(false)
   const [start, setStart] = useState(fmtDateInput(today))
   const [end, setEnd] = useState(fmtDateInput(twoWeeks))
+
+  // Session cache helpers
+  const SESSION_KEY = 'clubotel_prices_cache_v1'
+  type CacheShape = {
+    start: string
+    end: string
+    items: Record<string, SummaryRow>
+  }
+  const readCache = (): CacheShape | null => {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as CacheShape
+      if (!parsed || !parsed.items) return null
+      return parsed
+    } catch {
+      return null
+    }
+  }
+  const writeCache = (cache: CacheShape) => {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(cache))
+    } catch {}
+  }
+  const upsertCacheItem = (key: string, row: SummaryRow) => {
+    const existing = readCache() || { start, end, items: {} }
+    existing.start = start
+    existing.end = end
+    existing.items[key] = row
+    writeCache(existing)
+  }
+  const keyFor = (r: { in: string; out: string }) => `${r.in}-${r.out}`
+
+  // Background prefetch by date pairs
+  const prefetchInBackground = async () => {
+    const ranges = generateDateRanges(start, end)
+    if (ranges.length === 0) return
+    const newlyArrived = new Set<string>()
+
+    const processRange = async (inDate: string, outDate: string) => {
+      try {
+        const url = buildClubotelUrl(inDate, outDate)
+        const html = await fetchWithProxy(url)
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(html, 'text/html')
+        let parsed = parseStrict(doc)
+        if (parsed.length === 0) parsed = parseRelaxed(doc)
+
+        const candidate: SummaryRow = { in: inDate, out: outDate, room_only: null, breakfast: null }
+        for (const p of parsed) {
+          if (p.meal === 'room_only') {
+            candidate.room_only = candidate.room_only == null ? p.price : Math.min(candidate.room_only, p.price)
+          } else if (p.meal === 'breakfast') {
+            candidate.breakfast = candidate.breakfast == null ? p.price : Math.min(candidate.breakfast, p.price)
+          }
+        }
+        const k = keyFor(candidate)
+        const cache = readCache()
+        const prev = cache?.items?.[k]
+        const improved = !prev ||
+          ((candidate.room_only != null && (prev.room_only == null || candidate.room_only < prev.room_only)) ||
+           (candidate.breakfast != null && (prev.breakfast == null || candidate.breakfast < prev.breakfast)))
+        if (improved) {
+          upsertCacheItem(k, candidate)
+          newlyArrived.add(k)
+          const items = Object.values(readCache()?.items || {})
+          setData(items.map(it => ({ ...it, prefetched: newlyArrived.has(keyFor(it)) })))
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Initialize UI from existing cache immediately
+    const initialItems = Object.values(readCache()?.items || {})
+    if (initialItems.length > 0) {
+      setData(initialItems.map(it => ({ ...it, prefetched: false })))
+    }
+
+    const concurrency = fast ? 8 : 4
+    let index = 0
+    const workers = Array.from({ length: Math.min(concurrency, ranges.length) }, async () => {
+      while (index < ranges.length) {
+        const my = index++
+        const r = ranges[my]
+        // eslint-disable-next-line no-await-in-loop
+        await processRange(r.in, r.out)
+      }
+    })
+    await Promise.all(workers)
+  }
 
   const pollProgress = () => {
     const timer = setInterval(async () => {
@@ -266,9 +359,22 @@ export const App: React.FC = () => {
       // Client-side scraping
       try {
         setProgress({ status: 'running', total: 0, done: 0 })
-        const rawResults = await scrapeClientSide(start, end, (done, total) => {
-          setProgress({ status: 'running', total, done })
-        }, fast)
+        // Only fetch missing pairs
+        const ranges = generateDateRanges(start, end)
+        const cache = readCache()
+        const missing = ranges.filter(r => !cache?.items?.[keyFor(r)])
+        let done = 0
+        const total = missing.length
+        const rawResults = await (async () => {
+          if (missing.length === 0) return [] as Array<{ in: string; out: string; meal_type: string; price: number }>
+          const startDate = missing[0]?.in || start
+          const endDate = missing[missing.length - 1]?.out || end
+          return await scrapeClientSide(startDate, endDate, (d, t) => {
+            // best-effort progress for partial fetch
+            done = Math.min(total, done + 1)
+            setProgress({ status: 'running', total, done })
+          }, fast)
+        })()
         
         // Process the results to match the server-side format
         const processedResults = rawResults.reduce<Record<string, SummaryRow>>((acc, curr) => {
@@ -293,10 +399,16 @@ export const App: React.FC = () => {
           }
           
           return acc
-        }, {})
+        }, {} as Record<string, SummaryRow>)
         
-        const finalResults = Object.values(processedResults)
-        setData(finalResults)
+        // Merge back into cache and update UI
+        const existing = readCache() || { start, end, items: {} }
+        for (const [k, v] of Object.entries(processedResults)) {
+          existing.items[k] = v
+        }
+        writeCache(existing)
+        const finalResults = Object.values(existing.items)
+        setData(finalResults.map(r => ({ ...r, prefetched: false })))
         setProgress({ status: 'done', total: 0, done: 0 })
       } catch (e: any) {
         setError(e.message || 'Client-side scraping failed')
@@ -307,32 +419,72 @@ export const App: React.FC = () => {
       return
     }
     
-    // Server-side scraping
-    const stop = pollProgress()
+    // Refresh using session cache first and fetch only missing pairs
     try {
-      const params = new URLSearchParams({ fast: fast ? '1' : '0', start, end })
-      const res = await fetch(`/lowest_two_prices_json?${params.toString()}`, { cache: 'no-store' })
-      if (!res.ok) throw new Error('Failed to fetch')
-      const json = (await res.json()) as unknown
-      if (!Array.isArray(json)) throw new Error('Unexpected response')
-      const safe = json.map((r: any) => ({
-        in: String(r?.in ?? ''),
-        out: String(r?.out ?? ''),
-        room_only: r?.room_only ?? null,
-        breakfast: r?.breakfast ?? null,
-      })) as SummaryRow[]
-      setData(safe)
+      const ranges = generateDateRanges(start, end)
+      const cache = readCache() || { start, end, items: {} }
+      const cachedItems = Object.values(cache.items)
+      if (cachedItems.length > 0) {
+        setData(cachedItems.map(r => ({ ...r, prefetched: false })))
+      }
+
+      const missing = ranges.filter(r => !cache.items[keyFor(r)])
+      if (missing.length === 0) {
+        return
+      }
+
+      setProgress({ status: 'running', total: missing.length, done: 0 })
+      let done = 0
+      // Scrape only missing pairs client-side in the background of this refresh
+      const groupedByContiguity: Array<{ start: string; end: string }> = []
+      if (missing.length > 0) {
+        let currentStart = missing[0].in
+        let currentEnd = missing[0].out
+        for (let i = 1; i < missing.length; i++) {
+          currentEnd = missing[i].out
+        }
+        groupedByContiguity.push({ start: currentStart, end: currentEnd })
+      }
+      for (const g of groupedByContiguity) {
+        // eslint-disable-next-line no-await-in-loop
+        const rawResults = await scrapeClientSide(g.start, g.end, () => {
+          done += 1
+          setProgress({ status: 'running', total: missing.length, done })
+        }, fast)
+        const processed = rawResults.reduce<Record<string, SummaryRow>>((acc, curr) => {
+          const key = `${curr.in}-${curr.out}`
+          if (!acc[key]) {
+            acc[key] = { in: curr.in, out: curr.out, room_only: null, breakfast: null }
+          }
+          if (curr.meal_type === 'room_only') {
+            acc[key].room_only = acc[key].room_only == null ? curr.price : Math.min(acc[key].room_only, curr.price)
+          } else if (curr.meal_type === 'breakfast') {
+            acc[key].breakfast = acc[key].breakfast == null ? curr.price : Math.min(acc[key].breakfast, curr.price)
+          }
+          return acc
+        }, {} as Record<string, SummaryRow>)
+        for (const [k, v] of Object.entries(processed)) {
+          cache.items[k] = v
+        }
+        writeCache(cache)
+        setData(Object.values(cache.items).map(r => ({ ...r, prefetched: false })))
+      }
+      setProgress({ status: 'done', total: missing.length, done: missing.length })
     } catch (e: any) {
       setError(e.message || 'Unknown error')
     } finally {
-      stop()
       setLoading(false)
       setProgress({ status: 'idle' })
     }
   }
 
   useEffect(() => {
-    // No auto refresh on mount
+    // On mount: hydrate from session and start background prefetch
+    const cached = readCache()
+    if (cached && Object.values(cached.items).length > 0) {
+      setData(Object.values(cached.items).map(r => ({ ...r, prefetched: false })))
+    }
+    prefetchInBackground()
   }, [])
 
   const rows = useMemo(() => {
@@ -388,6 +540,7 @@ export const App: React.FC = () => {
               <th>Room only (per night)</th>
               <th>Breakfast (total)</th>
               <th>Breakfast (per night)</th>
+              <th>Source</th>
               <th>Page</th>
             </tr>
           </thead>
@@ -406,6 +559,7 @@ export const App: React.FC = () => {
                 <td>{formatNis(r.roomOnlyPerNight)}</td>
                 <td>{formatNis(r.breakfast)}</td>
                 <td>{formatNis(r.breakfastPerNight)}</td>
+                <td>{r.prefetched ? 'Prefetch' : ''}</td>
                 <td>
                   <a href={buildClubotelUrl(r.in, r.out)} target="_blank" rel="noopener noreferrer">Open</a>
                 </td>
