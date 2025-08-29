@@ -39,6 +39,197 @@ function addMonths(date: Date, months: number) {
   return d
 }
 
+function generateDateRanges(start: string, end: string) {
+  const ranges: Array<{in: string, out: string}> = []
+  const startDate = new Date(start)
+  const endDate = new Date(end)
+  const curr = new Date(startDate)
+  
+  while (curr <= endDate) {
+    if (curr.getDay() === 0) { // Sunday
+      const out = new Date(curr)
+      out.setDate(out.getDate() + 4)
+      if (out <= endDate) {
+        ranges.push({
+          in: fmtDateInput(curr),
+          out: fmtDateInput(out)
+        })
+      }
+    }
+    if (curr.getDay() === 4) { // Thursday
+      const out = new Date(curr)
+      out.setDate(out.getDate() + 3)
+      if (out <= endDate) {
+        ranges.push({
+          in: fmtDateInput(curr),
+          out: fmtDateInput(out)
+        })
+      }
+    }
+    curr.setDate(curr.getDate() + 1)
+  }
+  return ranges
+}
+
+function buildClubotelUrl(inDate: string, outDate: string) {
+  const params = new URLSearchParams({
+    lang: 'heb',
+    hotel: '1_1',
+    rooms: '1',
+    ad1: '2',
+    ch1: '3',
+    inf1: '0',
+    in: inDate,
+    out: outDate,
+    _ga: '2.78397907.694390100.1752303048-758168206.1752303047'
+  })
+  return `https://www.clubhotels.co.il/BE_Results.aspx?${params.toString()}`
+}
+
+async function fetchWithProxy(url: string): Promise<string> {
+  const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+  const resp = await fetch(proxied, { cache: 'no-store' })
+  if (!resp.ok) throw new Error(`Proxy fetch failed: ${resp.status}`)
+  const text = await resp.text()
+  if (!text) throw new Error('Proxy returned empty response')
+  return text
+}
+
+function normalizeMeal(text: string): 'breakfast' | 'room_only' | null {
+  const t = text.toLowerCase()
+  // Hebrew and common abbreviations
+  if (
+    t.includes('כולל ארוחת בוקר') ||
+    t.includes('ארוחת בוקר') ||
+    t.includes('עם ארוחת') ||
+    t.includes('bb')
+  ) return 'breakfast'
+  if (
+    t.includes('לינה בלבד') ||
+    t.includes('ללא ארוחת') ||
+    t.includes('room only') ||
+    t.includes('ro')
+  ) return 'room_only'
+  return null
+}
+
+function parseStrict(doc: Document): Array<{ price: number; meal: 'breakfast'|'room_only' }> {
+  const found: Array<{ price: number; meal: 'breakfast'|'room_only' }> = []
+  const planDivs = Array.from(doc.querySelectorAll('div.planprice')) as HTMLElement[]
+  for (const div of planDivs) {
+    const priceSpan = div.querySelector('span.PriceD') as HTMLElement | null
+    let price: number | null = null
+    if (priceSpan && priceSpan.getAttribute('price')) {
+      const raw = priceSpan.getAttribute('price') || ''
+      const digits = raw.replace(/[^0-9]/g, '')
+      if (digits) price = parseInt(digits, 10)
+    }
+    // find nearest matrixButton before or after this price block
+    let meal: 'breakfast'|'room_only' | null = null
+    // forward scan
+    {
+      const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT)
+      walker.currentNode = div
+      let steps = 0
+      while (steps < 400 && !meal) {
+        const n = walker.nextNode() as HTMLElement | null
+        if (!n) break
+        steps++
+        if (n.matches && n.matches('div.matrixButton')) {
+          const rd = n.getAttribute('roomdata') || ''
+          const m = normalizeMeal(rd)
+          if (m) meal = m
+        }
+      }
+    }
+    // backward scan (siblings upwards) if still unknown
+    if (!meal) {
+      let sib: Element | null = div.previousElementSibling
+      let hops = 0
+      while (sib && hops < 60 && !meal) {
+        if (sib instanceof HTMLElement && sib.matches('div.matrixButton')) {
+          const rd = sib.getAttribute('roomdata') || ''
+          const m = normalizeMeal(rd)
+          if (m) meal = m
+        }
+        sib = sib.previousElementSibling
+        hops++
+      }
+    }
+    if (price != null && meal) {
+      // sanity filter to avoid outrageous numbers picked from unrelated parts
+      if (price >= 300 && price <= 50000) {
+        found.push({ price, meal })
+      }
+    }
+  }
+  return found
+}
+
+function parseRelaxed(doc: Document): Array<{ price: number; meal: 'breakfast'|'room_only' }> {
+  const found: Array<{ price: number; meal: 'breakfast'|'room_only' }> = []
+  const containers = Array.from(doc.querySelectorAll('div, tr, span')) as HTMLElement[]
+  for (const el of containers) {
+    const text = el.textContent || ''
+    const priceMatch = text.match(/₪\s*([\d,.]+)/)
+    if (!priceMatch) continue
+    const price = parseInt(priceMatch[1].replace(/[^0-9]/g, ''), 10)
+    const lc = text.toLowerCase()
+    const meal: 'breakfast'|'room_only' = (lc.includes('בוקר') || lc.includes('ארוחה')) ? 'breakfast' : 'room_only'
+    if (!Number.isNaN(price) && price >= 300 && price <= 50000) {
+      found.push({ price, meal })
+    }
+  }
+  return found
+}
+
+async function scrapeClientSide(start: string, end: string, progress: (done: number, total: number) => void, fast = false) {
+  const ranges = generateDateRanges(start, end)
+  const results: Array<{in: string, out: string, meal_type: string, price: number}> = []
+  const total = ranges.length
+  let done = 0
+
+  const scrapeOne = async (inDate: string, outDate: string) => {
+    try {
+      const url = buildClubotelUrl(inDate, outDate)
+      const html = await fetchWithProxy(url)
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+      let parsed = parseStrict(doc)
+      if (parsed.length === 0) parsed = parseRelaxed(doc)
+      for (const p of parsed) {
+        results.push({ in: inDate, out: outDate, meal_type: p.meal, price: p.price })
+      }
+    } catch (e) {
+      console.error(`Client scrape failed for ${inDate}-${outDate}`, e)
+    } finally {
+      done += 1
+      progress(done, total)
+    }
+  }
+
+  if (!fast) {
+    for (const r of ranges) {
+      // eslint-disable-next-line no-await-in-loop
+      await scrapeOne(r.in, r.out)
+    }
+  } else {
+    const concurrency = 6
+    let index = 0
+    const workers = Array.from({ length: Math.min(concurrency, ranges.length) }, async () => {
+      while (index < ranges.length) {
+        const myIndex = index++
+        const r = ranges[myIndex]
+        // eslint-disable-next-line no-await-in-loop
+        await scrapeOne(r.in, r.out)
+      }
+    })
+    await Promise.all(workers)
+  }
+  
+  return results
+}
+
 export const App: React.FC = () => {
   const today = new Date()
   const twoWeeks = new Date(today)
@@ -49,6 +240,7 @@ export const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({ status: 'idle' })
   const [fast, setFast] = useState(false)
+  const [clientSide, setClientSide] = useState(false)
   const [start, setStart] = useState(fmtDateInput(today))
   const [end, setEnd] = useState(fmtDateInput(twoWeeks))
 
@@ -69,6 +261,53 @@ export const App: React.FC = () => {
   const fetchData = async () => {
     setLoading(true)
     setError(null)
+    
+    if (clientSide) {
+      // Client-side scraping
+      try {
+        setProgress({ status: 'running', total: 0, done: 0 })
+        const rawResults = await scrapeClientSide(start, end, (done, total) => {
+          setProgress({ status: 'running', total, done })
+        }, fast)
+        
+        // Process the results to match the server-side format
+        const processedResults = rawResults.reduce<Record<string, SummaryRow>>((acc, curr) => {
+          const key = `${curr.in}-${curr.out}`
+          if (!acc[key]) {
+            acc[key] = {
+              in: curr.in,
+              out: curr.out,
+              room_only: null,
+              breakfast: null
+            }
+          }
+          
+          if (curr.meal_type === 'room_only') {
+            acc[key].room_only = acc[key].room_only == null
+              ? curr.price
+              : Math.min(acc[key].room_only, curr.price)
+          } else if (curr.meal_type === 'breakfast') {
+            acc[key].breakfast = acc[key].breakfast == null
+              ? curr.price
+              : Math.min(acc[key].breakfast, curr.price)
+          }
+          
+          return acc
+        }, {})
+        
+        const finalResults = Object.values(processedResults)
+        setData(finalResults)
+        setProgress({ status: 'done', total: 0, done: 0 })
+      } catch (e: any) {
+        setError(e.message || 'Client-side scraping failed')
+      } finally {
+        setLoading(false)
+        setProgress({ status: 'idle' })
+      }
+      return
+    }
+    
+    // Server-side scraping
     const stop = pollProgress()
     try {
       const params = new URLSearchParams({ fast: fast ? '1' : '0', start, end })
@@ -118,6 +357,10 @@ export const App: React.FC = () => {
             <input type="checkbox" checked={fast} onChange={e => setFast(e.target.checked)} />
             Fast mode
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--muted)' }}>
+            <input type="checkbox" checked={clientSide} onChange={e => setClientSide(e.target.checked)} />
+            Client-side
+          </label>
           <input type="date" value={start} onChange={e => setStart(e.target.value)} />
           <span style={{ color: 'var(--muted)' }}>→</span>
           <input type="date" value={end} onChange={e => setEnd(e.target.value)} />
@@ -145,12 +388,13 @@ export const App: React.FC = () => {
               <th>Room only (per night)</th>
               <th>Breakfast (total)</th>
               <th>Breakfast (per night)</th>
+              <th>Page</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>Pick dates and click Refresh.</td>
+                <td colSpan={8} style={{ textAlign: 'center', padding: '1rem' }}>Pick dates and click Refresh.</td>
               </tr>
             )}
             {rows.map((r, i) => (
@@ -162,6 +406,9 @@ export const App: React.FC = () => {
                 <td>{formatNis(r.roomOnlyPerNight)}</td>
                 <td>{formatNis(r.breakfast)}</td>
                 <td>{formatNis(r.breakfastPerNight)}</td>
+                <td>
+                  <a href={buildClubotelUrl(r.in, r.out)} target="_blank" rel="noopener noreferrer">Open</a>
+                </td>
               </tr>
             ))}
           </tbody>

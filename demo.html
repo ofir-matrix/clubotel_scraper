@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clubotel Scraper - Demo & Setup Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .demo-section {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .demo-section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+
+        .demo-section h3 {
+            color: #555;
+            margin: 20px 0 10px 0;
+            font-size: 1.3rem;
+        }
+
+        .demo-section p {
+            margin-bottom: 15px;
+            color: #666;
+        }
+
+        .demo-section ul, .demo-section ol {
+            margin: 15px 0;
+            padding-left: 30px;
+        }
+
+        .demo-section li {
+            margin-bottom: 8px;
+            color: #666;
+        }
+
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        .highlight {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .highlight.important {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+
+        .highlight.success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 10px 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn.secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+
+        .btn.danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        }
+
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .tech-card {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .tech-card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .tech-card p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-indicator.ready {
+            background: #51cf66;
+        }
+
+        .status-indicator.pending {
+            background: #ffd43b;
+        }
+
+        .status-indicator.error {
+            background: #ff6b6b;
+        }
+
+        .file-structure {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            padding: 20px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            margin: 15px 0;
+        }
+
+        .file-structure .folder {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .file-structure .file {
+            color: #666;
+        }
+
+        .file-structure .indent {
+            margin-left: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            header h1 {
+                font-size: 2rem;
+            }
+            
+            .tech-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏨 Clubotel Scraper - Client Side</h1>
+            <p>Run Python web scraping directly in your browser - no server needed!</p>
+        </header>
+
+        <div class="demo-section">
+            <h2>🚀 What You're Getting</h2>
+            <p>This is a <strong>client-side web scraping solution</strong> that runs Python code directly in your browser using <strong>WebContainers</strong>. No server installation, no Python setup, no dependencies to manage locally.</p>
+            
+            <div class="highlight success">
+                <strong>✨ Key Benefits:</strong>
+                <ul>
+                    <li>Runs entirely in your browser</li>
+                    <li>Full Python environment with package management</li>
+                    <li>Real-time scraping progress and results</li>
+                    <li>Download CSV results directly to your computer</li>
+                    <li>Beautiful, modern interface</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔧 How It Works</h2>
+            <p><strong>WebContainers</strong> is a revolutionary technology that runs Linux containers directly in your browser:</p>
+            
+            <div class="tech-grid">
+                <div class="tech-card">
+                    <h4>🐧 Linux Environment</h4>
+                    <p>Complete Ubuntu-based container with full system access</p>
+                </div>
+                <div class="tech-card">
+                    <h4>🐍 Python Support</h4>
+                    <p>Python 3.11 with pip, pandas, beautifulsoup4, and more</p>
+                </div>
+                <div class="tech-card">
+                    <h4>🌐 Network Access</h4>
+                    <p>Make HTTP requests to external websites for scraping</p>
+                </div>
+                <div class="tech-card">
+                    <h4>💾 File System</h4>
+                    <p>Virtual file system that persists during your session</p>
+                </div>
+            </div>
+
+            <h3>Scraping Process</h3>
+            <ol>
+                <li><strong>Container Boot:</strong> WebContainer initializes with Python environment</li>
+                <li><strong>Dependency Install:</strong> Automatically installs required packages</li>
+                <li><strong>Scraper Execution:</strong> Runs your Python scraper with parameters</li>
+                <li><strong>Real-time Output:</strong> Shows progress and results as they happen</li>
+                <li><strong>File Download:</strong> Save CSV results directly to your computer</li>
+            </ol>
+        </div>
+
+        <div class="demo-section">
+            <h2>📋 Requirements</h2>
+            
+            <h3>Browser Compatibility</h3>
+            <ul>
+                <li><span class="status-indicator ready"></span><strong>Chrome/Edge:</strong> Version 102+ (Full support)</li>
+                <li><span class="status-indicator ready"></span><strong>Firefox:</strong> Version 113+ (Full support)</li>
+                <li><span class="status-indicator ready"></span><strong>Safari:</strong> Version 16+ (Full support)</li>
+            </ul>
+
+            <h3>System Requirements</h3>
+            <ul>
+                <li><strong>RAM:</strong> Minimum 4GB, Recommended 8GB+</li>
+                <li><strong>Storage:</strong> At least 1GB free space</li>
+                <li><strong>Internet:</strong> Stable connection for initial setup and scraping</li>
+            </ul>
+
+            <div class="highlight important">
+                <strong>⚠️ Important:</strong> WebContainers require a modern browser with WebAssembly support. Most browsers from 2022 onwards support this technology.
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🚀 Quick Start Options</h2>
+            
+            <h3>Option 1: Run Locally (Recommended)</h3>
+            <ol>
+                <li>Install Node.js (version 18 or higher) from <a href="https://nodejs.org/" target="_blank">nodejs.org</a></li>
+                <li>Open terminal/command prompt in this folder</li>
+                <li>Run: <code>npm install</code></li>
+                <li>Run: <code>npm start</code></li>
+                <li>Open browser to <code>http://localhost:8080</code></li>
+            </ol>
+
+            <h3>Option 2: Use with Live Server (VS Code)</h3>
+            <ol>
+                <li>Install the "Live Server" extension in VS Code</li>
+                <li>Right-click on <code>index.html</code></li>
+                <li>Select "Open with Live Server"</li>
+            </ol>
+
+            <h3>Option 3: Deploy to GitHub Pages</h3>
+            <ol>
+                <li>Push your code to a GitHub repository</li>
+                <li>Go to Settings → Pages</li>
+                <li>Select source branch and save</li>
+                <li>Your app will be available at <code>https://username.github.io/repository-name</code></li>
+            </ol>
+
+            <div class="highlight">
+                <strong>💡 Pro Tip:</strong> For Windows users, you can double-click <code>start.bat</code> or run <code>start.ps1</code> in PowerShell for automatic setup.
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>📁 Project Structure</h2>
+            <div class="file-structure">
+                <div class="folder">clubotel-scraper-client/</div>
+                <div class="indent">
+                    <div class="file">index.html          # Main HTML interface</div>
+                    <div class="file">styles.css          # CSS styling</div>
+                    <div class="file">main.js            # JavaScript application logic</div>
+                    <div class="file">package.json       # Node.js dependencies</div>
+                    <div class="file">README_CLIENT.md   # Detailed documentation</div>
+                    <div class="file">start.bat          # Windows startup script</div>
+                    <div class="file">start.ps1          # PowerShell startup script</div>
+                    <div class="file">demo.html          # This demo file</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🎛️ Configuration Options</h2>
+            
+            <h3>Scraping Parameters</h3>
+            <ul>
+                <li><strong>Start Date:</strong> When to begin scraping (default: today)</li>
+                <li><strong>End Date:</strong> When to stop scraping (default: 3 months from now)</li>
+                <li><strong>Scraper Mode:</strong> Safe (sequential) or Fast (parallel)</li>
+                <li><strong>Navigation Wait:</strong> Delay between requests in seconds</li>
+                <li><strong>Block Images:</strong> Reduce bandwidth by blocking image downloads</li>
+            </ul>
+
+            <h3>Environment Variables</h3>
+            <p>The scraper automatically sets these environment variables:</p>
+            <div class="code-block">
+START_DATE=2024-01-01
+END_DATE=2024-04-01
+SCRAPER_NAV_WAIT=0.8
+SCRAPER_BLOCK_IMAGES=1
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔍 Understanding the Output</h2>
+            
+            <h3>Console Tab</h3>
+            <ul>
+                <li><strong>Real-time Logs:</strong> See what the scraper is doing</li>
+                <li><strong>Progress Updates:</strong> Track scraping completion percentage</li>
+                <li><strong>Error Messages:</strong> Identify and troubleshoot issues</li>
+            </ul>
+
+            <h3>Results Tab</h3>
+            <ul>
+                <li><strong>Data Table:</strong> View scraped hotel prices in a table format</li>
+                <li><strong>Columns:</strong> Check-in date, check-out date, meal type, price</li>
+                <li><strong>Sorting:</strong> Click column headers to sort data</li>
+            </ul>
+
+            <h3>Files Tab</h3>
+            <ul>
+                <li><strong>Generated Files:</strong> List of CSV files created by the scraper</li>
+                <li><strong>Download Buttons:</strong> Download results directly to your computer</li>
+                <li><strong>File Types:</strong> CSV files with hotel price data</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>🚨 Important Notes</h2>
+            
+            <div class="highlight important">
+                <strong>CORS and Web Scraping:</strong>
+                <ul>
+                    <li>WebContainers run in your browser, so CORS restrictions apply</li>
+                    <li>Some websites may block requests from browsers</li>
+                    <li>Be respectful of website resources and use appropriate delays</li>
+                </ul>
+            </div>
+
+            <div class="highlight">
+                <strong>Browser Limitations:</strong>
+                <ul>
+                    <li>Large scraping jobs may use significant browser memory</li>
+                    <li>Keep the scraper tab active for best performance</li>
+                    <li>Unstable internet may cause scraping failures</li>
+                </ul>
+            </div>
+
+            <div class="highlight success">
+                <strong>Data Privacy:</strong>
+                <ul>
+                    <li>All data is processed locally in your browser</li>
+                    <li>Your scraping data never leaves your computer</li>
+                    <li>Generated files are stored in the virtual container</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🛠️ Troubleshooting</h2>
+            
+            <h3>Common Issues</h3>
+            <ul>
+                <li><strong>WebContainer Won't Initialize:</strong> Check browser compatibility and internet connection</li>
+                <li><strong>Dependencies Won't Install:</strong> Verify internet connection and PyPI availability</li>
+                <li><strong>Scraping Fails:</strong> Check website accessibility and increase wait times</li>
+                <li><strong>Memory Issues:</strong> Close other tabs and reduce scraping range</li>
+            </ul>
+
+            <h3>Debug Mode</h3>
+            <p>Enable detailed logging by opening browser console (F12):</p>
+            <ul>
+                <li><strong>Network Tab:</strong> Monitor HTTP requests</li>
+                <li><strong>Console Tab:</strong> View JavaScript errors and logs</li>
+                <li><strong>Performance Tab:</strong> Monitor memory usage</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>🚀 Ready to Get Started?</h2>
+            <p>Choose your preferred method and start scraping hotel prices directly in your browser!</p>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="index.html" class="btn">🚀 Launch Full Application</a>
+                <a href="README_CLIENT.md" class="btn secondary">📚 Read Full Documentation</a>
+                <a href="https://github.com/stackblitz/webcontainer-core" target="_blank" class="btn secondary">🔗 Learn About WebContainers</a>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>📚 Technical Details</h2>
+            
+            <h3>WebContainer Architecture</h3>
+            <ul>
+                <li><strong>Linux Kernel:</strong> Virtualized Linux environment</li>
+                <li><strong>File System:</strong> Virtual file system with persistence</li>
+                <li><strong>Process Management:</strong> Full process isolation and management</li>
+                <li><strong>Network Stack:</strong> Complete TCP/IP networking support</li>
+                <li><strong>Package Management:</strong> apt, pip, npm, and other package managers</li>
+            </ul>
+
+            <h3>Python Environment</h3>
+            <ul>
+                <li><strong>Python Version:</strong> 3.11</li>
+                <li><strong>Package Manager:</strong> pip with PyPI access</li>
+                <li><strong>Key Libraries:</strong> requests, beautifulsoup4, pandas, python-dateutil</li>
+                <li><strong>Dependencies:</strong> Automatically installed from requirements.txt</li>
+            </ul>
+
+            <h3>Security Features</h3>
+            <ul>
+                <li><strong>Sandboxed Execution:</strong> All code runs in isolated container</li>
+                <li><strong>No System Access:</strong> Cannot access host file system</li>
+                <li><strong>Network Isolation:</strong> Limited to HTTP/HTTPS requests</li>
+                <li><strong>Memory Limits:</strong> Automatic memory management and cleanup</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔮 Future Enhancements</h2>
+            <ul>
+                <li><strong>Export Options:</strong> Support for Excel, JSON, and other formats</li>
+                <li><strong>Scheduling:</strong> Run scraping jobs at specific times</li>
+                <li><strong>Notifications:</strong> Browser notifications when scraping completes</li>
+                <li><strong>Data Visualization:</strong> Charts and graphs for price trends</li>
+                <li><strong>Multiple Hotels:</strong> Scrape multiple hotel chains simultaneously</li>
+                <li><strong>API Integration:</strong> Connect to hotel booking APIs</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>🙏 Acknowledgments</h2>
+            <ul>
+                <li><strong>WebContainers Team:</strong> For the amazing container technology</li>
+                <li><strong>Python Community:</strong> For the excellent web scraping libraries</li>
+                <li><strong>Clubotel:</strong> For providing the hotel data (please respect their terms of service)</li>
+            </ul>
+        </div>
+
+        <div class="demo-section">
+            <h2>📞 Support</h2>
+            <p>If you encounter issues or have questions:</p>
+            <ol>
+                <li>Check the troubleshooting section above</li>
+                <li>Review browser console for error messages</li>
+                <li>Ensure your setup meets all requirements</li>
+                <li>Consider opening an issue on GitHub</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        // Simple demo functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add some interactive elements
+            const codeBlocks = document.querySelectorAll('.code-block');
+            codeBlocks.forEach(block => {
+                block.addEventListener('click', function() {
+                    // Copy code to clipboard
+                    const text = this.textContent;
+                    navigator.clipboard.writeText(text).then(() => {
+                        const originalText = this.textContent;
+                        this.textContent = 'Copied to clipboard!';
+                        setTimeout(() => {
+                            this.textContent = originalText;
+                        }, 2000);
+                    });
+                });
+                
+                block.style.cursor = 'pointer';
+                block.title = 'Click to copy code';
+            });
+
+            // Add smooth scrolling for anchor links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
