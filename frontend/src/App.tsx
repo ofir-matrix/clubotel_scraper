@@ -232,6 +232,11 @@ async function scrapeClientSide(start: string, end: string, progress: (done: num
   return results
 }
 
+interface SortConfig {
+  key: string;
+  direction: 'asc' | 'desc';
+}
+
 export const App: React.FC = () => {
   const today = new Date()
   const twoWeeks = new Date(today)
@@ -241,6 +246,7 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({ status: 'idle' })
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'in', direction: 'asc' })
   const [fast, setFast] = useState(false)
   const [clientSide, setClientSide] = useState(false)
   const [start, setStart] = useState(fmtDateInput(today))
@@ -487,14 +493,43 @@ export const App: React.FC = () => {
     prefetchInBackground()
   }, [])
 
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   const rows = useMemo(() => {
-    return data.map(r => {
+    const sortedData = [...data].map(r => {
       const nights = diffNights(r.in, r.out)
       const roomOnlyPerNight = r.room_only != null ? Math.round(r.room_only / nights) : null
       const breakfastPerNight = r.breakfast != null ? Math.round(r.breakfast / nights) : null
       return { ...r, nights, roomOnlyPerNight, breakfastPerNight }
-    })
-  }, [data])
+    });
+
+    if (sortConfig.key) {
+      sortedData.sort((a: any, b: any) => {
+        const aValue = a[sortConfig.key];
+        const bValue = b[sortConfig.key];
+        
+        if (aValue === null && bValue === null) return 0;
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    return sortedData;
+  }, [data, sortConfig]);
 
   const percent = progress.total && progress.total > 0
     ? Math.min(100, Math.round(((progress.done || 0) / progress.total) * 100))
@@ -533,13 +568,62 @@ export const App: React.FC = () => {
         <table className="table">
           <thead>
             <tr>
-              <th>Check-in</th>
-              <th>Check-out</th>
-              <th>Nights</th>
-              <th>Room only (total)</th>
-              <th>Room only (per night)</th>
-              <th>Breakfast (total)</th>
-              <th>Breakfast (per night)</th>
+              <th>
+                <button
+                  onClick={() => requestSort('in')}
+                  className={`sort-button ${sortConfig.key === 'in' ? sortConfig.direction : ''}`}
+                >
+                  Check-in {sortConfig.key === 'in' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
+              <th>
+                <button
+                  onClick={() => requestSort('out')}
+                  className={`sort-button ${sortConfig.key === 'out' ? sortConfig.direction : ''}`}
+                >
+                  Check-out {sortConfig.key === 'out' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
+              <th>
+                <button
+                  onClick={() => requestSort('nights')}
+                  className={`sort-button ${sortConfig.key === 'nights' ? sortConfig.direction : ''}`}
+                >
+                  Nights {sortConfig.key === 'nights' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
+              <th>
+                <button
+                  onClick={() => requestSort('room_only')}
+                  className={`sort-button ${sortConfig.key === 'room_only' ? sortConfig.direction : ''}`}
+                >
+                  Room only (total) {sortConfig.key === 'room_only' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
+              <th>
+                <button
+                  onClick={() => requestSort('roomOnlyPerNight')}
+                  className={`sort-button ${sortConfig.key === 'roomOnlyPerNight' ? sortConfig.direction : ''}`}
+                >
+                  Room only (per night) {sortConfig.key === 'roomOnlyPerNight' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
+              <th>
+                <button
+                  onClick={() => requestSort('breakfast')}
+                  className={`sort-button ${sortConfig.key === 'breakfast' ? sortConfig.direction : ''}`}
+                >
+                  Breakfast (total) {sortConfig.key === 'breakfast' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
+              <th>
+                <button
+                  onClick={() => requestSort('breakfastPerNight')}
+                  className={`sort-button ${sortConfig.key === 'breakfastPerNight' ? sortConfig.direction : ''}`}
+                >
+                  Breakfast (per night) {sortConfig.key === 'breakfastPerNight' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                </button>
+              </th>
               <th>Source</th>
               <th>Page</th>
             </tr>

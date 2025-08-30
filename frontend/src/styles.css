@@ -36,3 +36,22 @@ body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--tex
 .table tbody td{padding:.65rem .9rem;border-bottom:1px solid rgba(255,255,255,.06);}
 .table tbody tr:last-child td{border-bottom:none}
 .table tbody tr:hover{background:rgba(255,255,255,.04)}
+
+.sort-button {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.sort-button:hover {
+  color: var(--accent);
+}
+
+.sort-button.asc, .sort-button.desc {
+  color: var(--accent);
+}
