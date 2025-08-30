@@ -55,3 +55,17 @@ body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--tex
 .sort-button.asc, .sort-button.desc {
   color: var(--accent);
 }
+
+.btn.refreshing {
+  cursor: default;
+  position: relative;
+}
+
+.btn-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: rgba(255,255,255,0.5);
+  transition: width 0.3s ease;
+}

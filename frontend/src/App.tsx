@@ -239,8 +239,8 @@ interface SortConfig {
 
 export const App: React.FC = () => {
   const today = new Date()
-  const twoWeeks = new Date(today)
-  twoWeeks.setDate(twoWeeks.getDate() + 14)
+  const threeMonths = new Date(today)
+  threeMonths.setMonth(threeMonths.getMonth() + 3)
 
   const [data, setData] = useState<SummaryRowWithFlags[]>([])
   const [loading, setLoading] = useState(false)
@@ -250,14 +250,17 @@ export const App: React.FC = () => {
   const [fast, setFast] = useState(false)
   const [clientSide, setClientSide] = useState(false)
   const [start, setStart] = useState(fmtDateInput(today))
-  const [end, setEnd] = useState(fmtDateInput(twoWeeks))
+  const [end, setEnd] = useState(fmtDateInput(threeMonths))
+  const [refreshing, setRefreshing] = useState(false)
+  const [totalRefreshItems, setTotalRefreshItems] = useState(0)
+  const [completedRefreshItems, setCompletedRefreshItems] = useState(0)
 
   // Session cache helpers
-  const SESSION_KEY = 'clubotel_prices_cache_v1'
+  const SESSION_KEY = 'clubotel_prices_cache_v2'
   type CacheShape = {
     start: string
     end: string
-    items: Record<string, SummaryRow>
+    items: Record<string, SummaryRow & { lastChecked: number }>
   }
   const readCache = (): CacheShape | null => {
     try {
@@ -275,12 +278,13 @@ export const App: React.FC = () => {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(cache))
     } catch {}
   }
-  const upsertCacheItem = (key: string, row: SummaryRow) => {
+  const upsertCacheItem = (key: string, row: SummaryRow, lastChecked = Date.now()) => {
     const existing = readCache() || { start, end, items: {} }
     existing.start = start
     existing.end = end
-    existing.items[key] = row
+    existing.items[key] = { ...row, lastChecked }
     writeCache(existing)
+    return existing
   }
   const keyFor = (r: { in: string; out: string }) => `${r.in}-${r.out}`
 
@@ -289,11 +293,40 @@ export const App: React.FC = () => {
     const ranges = generateDateRanges(start, end)
     if (ranges.length === 0) return
     const newlyArrived = new Set<string>()
+    
+    setRefreshing(true)
+    setTotalRefreshItems(ranges.length)
+    setCompletedRefreshItems(0)
+
+    const fetchWithRetry = async (url: string, retries = 3, delay = 2000): Promise<string> => {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          return await fetchWithProxy(url)
+        } catch (error) {
+          if (attempt === retries) throw error
+          console.log(`Attempt ${attempt} failed for ${url}, retrying in ${delay}ms...`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          // Increase delay for next attempt
+          delay *= 1.5
+        }
+      }
+      throw new Error('All retry attempts failed')
+    }
 
     const processRange = async (inDate: string, outDate: string) => {
       try {
+        const key = `${inDate}-${outDate}`
+        const cache = readCache()
+        const existingItem = cache?.items?.[key]
+        
+        // Skip if item was checked in the last 30 minutes
+        const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000
+        if (existingItem?.lastChecked && existingItem.lastChecked > thirtyMinutesAgo) {
+          return
+        }
+
         const url = buildClubotelUrl(inDate, outDate)
-        const html = await fetchWithProxy(url)
+        const html = await fetchWithRetry(url)
         const parser = new DOMParser()
         const doc = parser.parseFromString(html, 'text/html')
         let parsed = parseStrict(doc)
@@ -307,21 +340,39 @@ export const App: React.FC = () => {
             candidate.breakfast = candidate.breakfast == null ? p.price : Math.min(candidate.breakfast, p.price)
           }
         }
-        const k = keyFor(candidate)
-        const cache = readCache()
-        const prev = cache?.items?.[k]
-        const improved = !prev ||
-          ((candidate.room_only != null && (prev.room_only == null || candidate.room_only < prev.room_only)) ||
-           (candidate.breakfast != null && (prev.breakfast == null || candidate.breakfast < prev.breakfast)))
+        
+        const improved = !existingItem ||
+          ((candidate.room_only != null && (existingItem.room_only == null || candidate.room_only < existingItem.room_only)) ||
+           (candidate.breakfast != null && (existingItem.breakfast == null || candidate.breakfast < existingItem.breakfast)))
+        
+        // Always update lastChecked, but only update price if improved
         if (improved) {
-          upsertCacheItem(k, candidate)
-          newlyArrived.add(k)
-          const items = Object.values(readCache()?.items || {})
-          setData(items.map(it => ({ ...it, prefetched: newlyArrived.has(keyFor(it)) })))
+          const updatedCache = upsertCacheItem(key, candidate)
+          newlyArrived.add(key)
+          const items = Object.values(updatedCache.items)
+          // Only mark as prefetched if the price was actually updated
+          setData(items.map(it => ({ 
+            ...it, 
+            prefetched: newlyArrived.has(keyFor(it))
+          })))
+        } else {
+          // Just update the lastChecked timestamp
+          upsertCacheItem(key, existingItem, Date.now())
         }
       } catch (e) {
-        // ignore
+        console.error(`Final error fetching ${inDate}-${outDate} after retries:`, e)
+      } finally {
+        setCompletedRefreshItems(prev => {
+          const newCount = prev + 1
+          if (newCount === ranges.length) {
+            setRefreshing(false)
+          }
+          return newCount
+        })
       }
+
+      // Add a small delay between requests to avoid overwhelming the server
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
 
     // Initialize UI from existing cache immediately
@@ -490,8 +541,30 @@ export const App: React.FC = () => {
     if (cached && Object.values(cached.items).length > 0) {
       setData(Object.values(cached.items).map(r => ({ ...r, prefetched: false })))
     }
+    
+    // Initial prefetch
     prefetchInBackground()
-  }, [])
+
+    // Set up periodic background refresh every 30 minutes
+    const refreshInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !refreshing) {
+        prefetchInBackground()
+      }
+    }, 30 * 60 * 1000)
+
+    // Also refresh when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !refreshing) {
+        prefetchInBackground()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(refreshInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [start, end]) // Re-run when date range changes
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -653,23 +726,7 @@ export const App: React.FC = () => {
         </table>
       </div>
 
-      {loading && (
-        <div className="overlay">
-          <div className="overlay-card">
-            <div className="spinner" />
-            <div className="overlay-title">Refreshing data…</div>
-            {percent !== undefined && (
-              <>
-                <div className="progress">
-                  <div className="bar" style={{ width: `${percent}%` }} />
-                </div>
-                <div className="progress-caption">{progress.done}/{progress.total} ({percent}%)</div>
-              </>
-            )}
-            {percent === undefined && <div className="progress-caption">Starting…</div>}
-          </div>
-        </div>
-      )}
+      {/* Removed overlay */}
 
       <footer className="footer">Prices in NIS. Updated on demand.</footer>
     </div>
