@@ -289,13 +289,41 @@ export const App: React.FC = () => {
   const keyFor = (r: { in: string; out: string }) => `${r.in}-${r.out}`
 
   // Background prefetch by date pairs
+  const generateAllNightRanges = (start: string, end: string) => {
+    const ranges: Array<{in: string, out: string}> = []
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+    const curr = new Date(startDate)
+    
+    while (curr <= endDate) {
+      // For each day, generate 1-3 night stays
+      for (let nights = 1; nights <= 3; nights++) {
+        const out = new Date(curr)
+        out.setDate(out.getDate() + nights)
+        if (out <= endDate) {
+          ranges.push({
+            in: fmtDateInput(curr),
+            out: fmtDateInput(out)
+          })
+        }
+      }
+      curr.setDate(curr.getDate() + 1)
+    }
+    return ranges
+  }
+
   const prefetchInBackground = async () => {
-    const ranges = generateDateRanges(start, end)
-    if (ranges.length === 0) return
+    // First do the standard ranges (Thursday/Sunday patterns)
+    const standardRanges = generateDateRanges(start, end)
+    if (standardRanges.length === 0) return
     const newlyArrived = new Set<string>()
+
+    // Calculate total number of ranges including additional 1-3 night stays
+    const extraRanges = generateAllNightRanges(start, end)
+    const allRanges = [...standardRanges, ...extraRanges]
     
     setRefreshing(true)
-    setTotalRefreshItems(ranges.length)
+    setTotalRefreshItems(allRanges.length)
     setCompletedRefreshItems(0)
 
     const fetchWithRetry = async (url: string, retries = 3, delay = 2000): Promise<string> => {
@@ -362,9 +390,9 @@ export const App: React.FC = () => {
       } catch (e) {
         console.error(`Final error fetching ${inDate}-${outDate} after retries:`, e)
       } finally {
-        setCompletedRefreshItems(prev => {
+        setCompletedRefreshItems((prev: number) => {
           const newCount = prev + 1
-          if (newCount === ranges.length) {
+          if (newCount === allRanges.length) {
             setRefreshing(false)
           }
           return newCount
@@ -383,12 +411,14 @@ export const App: React.FC = () => {
 
     const concurrency = fast ? 8 : 4
     let index = 0
-    const workers = Array.from({ length: Math.min(concurrency, ranges.length) }, async () => {
-      while (index < ranges.length) {
+    const workers = Array.from({ length: Math.min(concurrency, allRanges.length) }, async () => {
+      while (index < allRanges.length) {
         const my = index++
-        const r = ranges[my]
-        // eslint-disable-next-line no-await-in-loop
-        await processRange(r.in, r.out)
+        const r = allRanges[my]
+        if (r) {  // Add null check for TypeScript
+          // eslint-disable-next-line no-await-in-loop
+          await processRange(r.in, r.out)
+        }
       }
     })
     await Promise.all(workers)
@@ -416,10 +446,12 @@ export const App: React.FC = () => {
       // Client-side scraping
       try {
         setProgress({ status: 'running', total: 0, done: 0 })
-        // Only fetch missing pairs
-        const ranges = generateDateRanges(start, end)
+        // Only fetch missing pairs, including 1-3 night stays
+        const standardRanges = generateDateRanges(start, end)
+        const extraRanges = generateAllNightRanges(start, end)
+        const allRanges = [...standardRanges, ...extraRanges]
         const cache = readCache()
-        const missing = ranges.filter(r => !cache?.items?.[keyFor(r)])
+        const missing = allRanges.filter(r => !cache?.items?.[keyFor(r)])
         let done = 0
         const total = missing.length
         const rawResults = await (async () => {
